@@ -2,7 +2,7 @@
 Block buster is a game of color removal.
 
 Instructions:
-Click on any block that has a nieghbor of the same color.
+Click on any block that has a neighbor of the same color.
 All connecting blocks that share the same color as the selected block will be removed.
 
 The goal of the game is to remove as many blocks as possible
@@ -19,7 +19,9 @@ Date:   Feb 11, 2011
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+// #include <Windows.h> //windows specific include for using Sleep()
 #include <GL/glut.h>
+#include <time.h>
 
 #define boardSize 20
 #define blockSize 25
@@ -49,11 +51,18 @@ int gameBoard[boardSize][boardSize];
 //the current difficulty
 int currentDifficulty = NORMAL;
 
+//the player's score
+int score = 0;
+
+//blocks broken this click. used for score
+int blocksBroken = 0;
+
 // prototypes
 void init(void);
 void display(void);
 void keyboard(unsigned char key, int x, int y);
 void mouse (int button, int state, int x, int y);
+void reshape(int x, int y);
 void setColor (int x, int y);
 void drawSquare (int x, int y);
 void makeGameBoard(int difficulty);
@@ -65,32 +74,37 @@ void flood(int x, int y, int color);
 void collapse();
 void shift();
 void menuOptions();
-
+int checkWin();
+void updateScore();
+void gameOver();
 
 int main(int argc, char **argv)
 {
+	int mainMenu, difficultyMenu;
+	
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_SINGLE | GLUT_RGB);
 	glutInitWindowSize (500, 500);
 	glutInitWindowPosition (100, 100);
-	glutCreateWindow ("Block Break");
+	glutCreateWindow ("Block Buster");
 
-	int difficultyMenu = glutCreateMenu(menuOptions);
-	glutAddMenuEntry("Easiest", EASIEST);
-	glutAddMenuEntry("Easy", EASY);
-	glutAddMenuEntry("Normal", NORMAL);
-	glutAddMenuEntry("Hard", HARD);
-	glutAddMenuEntry("hardest", HARDEST);
+	difficultyMenu = glutCreateMenu(menuOptions);
+		glutAddMenuEntry("Easiest", EASIEST);
+		glutAddMenuEntry("Easy", EASY);
+		glutAddMenuEntry("Normal", NORMAL);
+		glutAddMenuEntry("Hard", HARD);
+		glutAddMenuEntry("Hardest", HARDEST);
 
-	int mainMenu = glutCreateMenu(menuOptions);
-	glutAddMenuEntry("New Game", NEW);
-	glutAddSubMenu("Change Difficulty", difficultyMenu);
-	glutAttachMenu (GLUT_RIGHT_BUTTON);
+	mainMenu = glutCreateMenu(menuOptions);
+		glutAddMenuEntry("New Game", NEW);
+		glutAddSubMenu("Change Difficulty", difficultyMenu);
+		glutAttachMenu (GLUT_RIGHT_BUTTON);
 
 	init();  
 	glutDisplayFunc(display);
 	glutKeyboardFunc (keyboard);
 	glutMouseFunc (mouse);
+	glutReshapeFunc(reshape);
 	glutMainLoop();
 
 	return 0;
@@ -115,7 +129,13 @@ void init(void)
    makeGameBoard(currentDifficulty);
    drawGameBoard();
 }
-
+/*
+	Forces window size to remain at 500 500
+*/
+void reshape(int x, int y)
+{
+	glutReshapeWindow(500, 500);
+}
 
 void display(void)
 {
@@ -131,7 +151,9 @@ void keyboard(unsigned char key, int x, int y)
 		exit(0);
 }
 
-
+/*
+	Destroys the blocks you clicked and checks the win condition
+*/
 void mouse (int button, int state, int x, int y)
 {
 	if ((button == GLUT_LEFT_BUTTON) && (state == GLUT_DOWN))
@@ -139,20 +161,18 @@ void mouse (int button, int state, int x, int y)
 		breakBlocks(x, y);
 		collapse();
 		shift();
+		if(checkWin())
+		{
+			printf("Game Over. Score: %d\n", score);
+			gameOver();
+		}
 	}
 	glutPostRedisplay();
 }
 
-
-void setColor (int x, int y)
-{
-	if (x<=50 && y<50) {
-		colorVec[0] = 1.0;
-		colorVec[1] = 1.0;
-		colorVec[2] = 1.0;
-	}
-}
-
+/*
+	Draws a block for the puzzle
+*/
 void drawSquare (int x, int y)
 {
 	int xPix = x * 25;
@@ -173,6 +193,9 @@ void drawSquare (int x, int y)
 	glEnd();
 }
 
+/*
+	Generates and prints out the array containing all the block data
+*/
 void makeGameBoard(int difficulty)
 {
 	int y, x;
@@ -187,6 +210,9 @@ void makeGameBoard(int difficulty)
 	}
 }
 
+/*
+	Draws the game board using the array as a reference 
+*/
 void drawGameBoard()
 {
 	int i1, i2;
@@ -199,9 +225,12 @@ void drawGameBoard()
 			drawSquare(i1, i2);
 		}
 	}
-	printf("board drawn\n");
 }
 
+/*
+	Sets the color vector depending on the int value
+	for each color.
+*/
 void setBlockColor(int color)
 {
 	switch(color)
@@ -244,18 +273,27 @@ void setBlockColor(int color)
 	}
 }
 
+/*
+	Verifies a group of blocks can be destroyed
+	then starts the flood function and finally
+	updates the score
+*/
 void breakBlocks(int x, int y)
 {
 	int xloc = x / blockSize;
 	int yloc = y / blockSize;
-	printf("x: %d, y: %d ", xloc, yloc);
 	if(isBreakable(xloc, yloc) == 1)
 	{
 		int breakColor = gameBoard[xloc][yloc];
 		flood(xloc, yloc, breakColor);
+		updateScore();
 	}
 }
 
+/*
+	Flood finds all neighboring blocks sharing the 
+	same color.
+*/
 void flood(int x, int y, int color)
 {
 	//exit if a different color than what we want to delete
@@ -266,6 +304,7 @@ void flood(int x, int y, int color)
 	//set to black and recursively call in all directions
 	else
 	{
+		blocksBroken++;
 		gameBoard[x][y] = BLACK;
 		if(x+1 < boardSize)
 			flood(x+1, y, color);
@@ -278,11 +317,24 @@ void flood(int x, int y, int color)
 	}
 }
 
+/*
+	Updates the score and resets the block broken count
+*/
+void updateScore()
+{
+	score += blocksBroken * blocksBroken;
+	blocksBroken = 0;
+}
+
+/*
+	Compare block colors and return true if this block
+	is breakable
+*/
 int isBreakable(int x, int y)
 {
 	int retVal = 0;
 	if(gameBoard[x][y] == BLACK)
-		printf("no block here");
+		printf("no block here\n");
 	else if(gameBoard[x][y] == gameBoard[x+1][y] && x+1 < boardSize)
 		retVal = 1;
 	else if(gameBoard[x][y] == gameBoard[x][y+1] && y+1 < boardSize)
@@ -291,13 +343,12 @@ int isBreakable(int x, int y)
 		retVal = 1;
 	else if(gameBoard[x][y] == gameBoard[x][y-1] && y-1 > -1)
 		retVal = 1;
-	if(retVal == 1)
-		printf("breakable\n");
-	else
-		printf("\n");
 	return retVal;
 }
 
+/*
+	Push all black blocks to the top of the puzzle
+*/
 void collapse()
 {
 	int y, x, i;
@@ -330,6 +381,10 @@ void collapse()
 	}
 }
 
+/*
+	Slides entire puzzle to the left if an entire column
+	has been destroyed
+*/
 void shift()
 {
 	int x, y, i;
@@ -374,6 +429,9 @@ void shift()
 	}
 }
 
+/*
+	handle which menu item was selected
+*/
 void menuOptions(int selection)
 {
 	switch(selection)
@@ -402,13 +460,50 @@ void menuOptions(int selection)
 			makeGameBoard(currentDifficulty);
 			break;	
 	}
-	
+
 	glutPostRedisplay();
 }
 
+/*
+	Check to see if all possible blocks have been
+	destroyed
+*/
+int checkWin()
+{
+	int x, y;
+	int win = 1;
+	for(x = 0; x < boardSize; x++)
+	{
+		for(y = 0; y < boardSize; y++)
+		{
+			if(gameBoard[x][y] != BLACK && isBreakable(x, y))
+			{
+					win = 0;
+			}
+		}
+	}
+	return win;
+}
 
+/*
+	Display the score once the game is over then restart
+*/
+void gameOver()
+{
+	/*
+	currently not working correctly. Could not get text to color or display
 
-
-
-
-
+	char gameOverString[256];
+	int i;
+	sprintf(gameOverString, "Game Over. Score: %d\0", score);
+	glColor3f(1.0, 1.0, 1.0);
+	glRasterPos2f(100.0, 100.0);
+	for(i = 0; gameOverString[i] != '\0'; i++)
+	{
+		glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, gameOverString[i]);
+	}
+	Sleep(5000);
+	*/
+	score = 0;
+	makeGameBoard(currentDifficulty);
+}
